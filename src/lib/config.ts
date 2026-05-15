@@ -2,7 +2,9 @@
 
 import dotenv from "dotenv";
 
-dotenv.config();
+// Ensure local .env values override any system environment variables so the
+// project connects to the intended Docker Postgres instance during local dev.
+dotenv.config({ override: true });
 
 export const config = {
   openaiApiKey: process.env.OPENAI_API_KEY || "",

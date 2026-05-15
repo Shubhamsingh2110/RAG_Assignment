@@ -163,12 +163,12 @@ provue/
 
 ### Using Docker (Recommended)
 ```powershell
-docker run --name berkshire-pg -e POSTGRES_PASSWORD=password -p 5432:5432 pgvector/pgvector:latest
+docker run --name berkshire-pg -e POSTGRES_PASSWORD=password -p 5434:5432 pgvector/pgvector:latest
 ```
 
 Set `.env`:
 ```
-DATABASE_URL=postgresql://postgres:password@localhost:5432/postgres
+DATABASE_URL=postgresql://postgres:password@127.0.0.1:5434/postgres
 ```
 
 ### Or Local PostgreSQL

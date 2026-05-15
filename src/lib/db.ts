@@ -69,6 +69,16 @@ export async function initDb() {
   }
 }
 
+export async function getServerInfo() {
+  const client = await pool.connect();
+  try {
+    const res = await client.query(`SELECT inet_server_addr() AS addr, inet_server_port() AS port, version() AS version;`);
+    return res.rows[0];
+  } finally {
+    client.release();
+  }
+}
+
 export async function getChunkCount() {
   const client = await pool.connect();
   try {
@@ -132,11 +142,11 @@ export async function storeChunk(chunk: Chunk) {
   }
 }
 
-export async function searchSimilar(embedding: number[], topK = 5) {
+export async function searchSimilar(embedding: number[], topK = 10) {
   const client = await pool.connect();
   try {
     const embeddingText = '[' + embedding.join(',') + ']';
-    const q = `SELECT id, text, source_year, source_file, chunk_index, embedding <=> $1::vector AS distance FROM chunks ORDER BY embedding <=> $1::vector ASC LIMIT $2`;
+    const q = `SELECT id, text, source_year, source_file, chunk_index, embedding <=> $1::vector AS distance FROM chunks ORDER BY embedding <-> $1::vector ASC LIMIT $2`;
     const res = await client.query(q, [embeddingText, topK]);
     return res.rows;
   } finally {

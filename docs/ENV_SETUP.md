@@ -9,7 +9,7 @@ Copy `.env.example` to `.env` and fill the values.
 - `DATABASE_URL` — PostgreSQL connection string. Example for Docker:
 
 ```
-DATABASE_URL=postgresql://postgres:YourPassword%40@localhost:5433/berkshire_pgvector
+DATABASE_URL=postgresql://postgres:YourPassword%40@127.0.0.1:5434/berkshire_pgvector
 ```
 - `NODE_ENV` — `development` or `production`.
 - `MASTRA_PROVIDER` — `openai` (default)
@@ -27,7 +27,7 @@ OPENAI_API_KEY=sk-...
 1. Run pgvector image (example using Docker Desktop or CLI):
 
 ```powershell
-docker run --name berkshire-pg -e POSTGRES_PASSWORD=YourPassword@ -p 5433:5432 -d pgvector/pgvector:latest
+docker run --name berkshire-pg -e POSTGRES_PASSWORD=YourPassword@ -p 5434:5432 -d pgvector/pgvector:latest
 ```
 
 2. Create database and extension:
@@ -40,7 +40,7 @@ docker exec berkshire-pg psql -U postgres -d berkshire_pgvector -c "CREATE EXTEN
 3. Update `.env` with encoded password (encode `@` as `%40`):
 
 ```
-DATABASE_URL=postgresql://postgres:YourPassword%40@localhost:5433/berkshire_pgvector
+DATABASE_URL=postgresql://postgres:YourPassword%40@127.0.0.1:5434/berkshire_pgvector
 ```
 
 ## Start development server and Mastra playground
@@ -61,7 +61,7 @@ npm run dev
 `src/index.ts` validates environment variables on startup and prints the expected Mastra playground URL.
 
 ## Troubleshooting
-- If `vector` extension creation fails in pgAdmin, ensure you are connected to the Docker container (port 5433) and not the system PostgreSQL instance.
+- If `vector` extension creation fails in pgAdmin, ensure you are connected to the Docker container (port 5434) and not the system PostgreSQL instance.
 - If your password contains special characters (like `@`), URL-encode them in `DATABASE_URL` (e.g., `@` -> `%40`).
 
 

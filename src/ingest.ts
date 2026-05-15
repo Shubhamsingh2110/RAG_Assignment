@@ -3,7 +3,7 @@ import path from "path";
 // pdfjs-dist doesn't ship types; ignore TypeScript for this import.
 // If this import fails in your environment consider installing pdf-parse instead.
 // @ts-ignore
-import pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import OpenAI from "openai";
 import { MDocument } from "@mastra/rag";
 import { config } from "./lib/config.js";
@@ -16,7 +16,8 @@ const EMBEDDING_MODEL = "text-embedding-3-small";
 
 async function extractTextFromPdf(filePath: string) {
   const data = await fs.readFile(filePath);
-  const loadingTask = pdfjsLib.getDocument({ data });
+  const bytes = new Uint8Array(data);
+  const loadingTask = pdfjsLib.getDocument({ data: bytes });
   const pdf = await loadingTask.promise;
   let fullText = "";
   for (let i = 1; i <= pdf.numPages; i++) {

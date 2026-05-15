@@ -1,26 +1,62 @@
 import dotenv from "dotenv";
+dotenv.config();
 import { createServer } from "http";
 import runIngest from "./ingest.js";
 import { berkshireAgent, buildBerkshirePrompt } from "./agents/berkshire.js";
 import { tools, vectorSearchTool } from "./tools/retrieval.js";
 import { validateConfig, config } from "./lib/config.js";
-import { clearChatMessages, getChatMessages, getChunkCount, storeChatMessage } from "./lib/db.js";
+import {
+  initDb,
+  clearChatMessages,
+  getChatMessages,
+  getChunkCount,
+  storeChatMessage,
+} from "./lib/db.js";
 import { listAvailableDocuments } from "./tools/retrieval.js";
 
-dotenv.config();
+
 
 async function main() {
   console.log("🚀 Berkshire Hathaway RAG Agent Starting...\n");
 
-  const errors = validateConfig();
-  if (errors.length > 0) {
-    console.error("Environment configuration errors:");
-    errors.forEach((error) => console.error(" - ", error));
-    console.error("\nPlease update your .env file (see IMPLEMENTATION.md and .env.example)\n");
-    process.exit(1);
+  function errorMessage(err: unknown) {
+    return err instanceof Error ? err.message : String(err);
   }
 
-  await ensureIndexedDocuments();
+ const errors = validateConfig();
+
+if (errors.length > 0) {
+  console.error("Environment configuration errors:");
+  errors.forEach((error) => console.error(" - ", error));
+  console.error("\nPlease update your .env file (see IMPLEMENTATION.md and .env.example)\n");
+  process.exit(1);
+}
+
+// Log the DB URL (masked) and server info to ensure we're connecting to the intended Postgres
+const rawDbUrl = config.databaseUrl || process.env.DATABASE_URL || "";
+const maskedDbUrl = rawDbUrl.replace(/(:\/\/)(.*@)/, (m, p1, p2) => p1 + "<REDACTED>@");
+console.log(`  Database URL: ${maskedDbUrl || "(not set)"}`);
+try {
+  const serverInfo = await (await import("./lib/db.js")).getServerInfo();
+  if (serverInfo) {
+    console.log(`  Connected Postgres address: ${serverInfo.addr}, port: ${serverInfo.port}`);
+    console.log(`  Postgres version: ${serverInfo.version}`);
+  }
+} catch (err) {
+  console.error("  Could not fetch Postgres server info:", errorMessage(err));
+}
+
+// Initialize PostgreSQL tables before querying them
+try {
+  await initDb();
+  console.log("✅ Database initialized");
+} catch (err) {
+  console.error("Fatal DB initialization error:", errorMessage(err));
+  console.error("Check that DATABASE_URL points to the Docker Postgres (port 5434) or install pgvector in the connected server.");
+  process.exit(1);
+}
+
+await ensureIndexedDocuments();
 
   const agent = await berkshireAgent;
   console.log(`✅ Agent initialized: ${agent.name}`);
@@ -117,13 +153,13 @@ async function main() {
 
   async function answerQuestion(message: string, sessionId: string, priorMessages: ClientMessage[] = []) {
     const query = message.trim();
-    const sources = await vectorSearchTool(query, 4);
+    const sources = await vectorSearchTool(query, 10);
     const context =
       sources.length > 0
         ? sources
             .map((source, index) => `[${index + 1}] ${source.year} ${source.source}\n${source.text}`)
             .join("\n\n")
-        : "No matching shareholder letter context was found.";
+        : "No matching shareholder letter context was found."
 
     const systemPrompt = buildBerkshirePrompt({
       retrievedContext: context,
@@ -150,7 +186,7 @@ async function main() {
 
   async function streamAnswer(message: string, sessionId: string, res: any, priorMessages: ClientMessage[] = []) {
     const query = message.trim();
-    const sources = await vectorSearchTool(query, 4);
+    const sources = await vectorSearchTool(query, 10);
     const context =
       sources.length > 0
         ? sources
@@ -973,8 +1009,25 @@ async function main() {
       return;
     }
 
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderHomePage());
+    // Serve static frontend if present, otherwise fall back to server-rendered playground.
+    // Avoid top-level `await` inside the request handler for compatibility with the bundler.
+    import("fs/promises")
+      .then(async (fs) => {
+        try {
+          const html = await fs.readFile(new URL("../public/index.html", import.meta.url), { encoding: "utf8" });
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(html);
+        } catch (e) {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(renderHomePage());
+        }
+      })
+      .catch(() => {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderHomePage());
+      });
+
+    return;
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

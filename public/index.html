@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Berkshire RAG Playground</title>
+    <style>
+      :root {
+        --bg: #f6f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --text: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --primary: #0f766e;
+        --primary-2: #0d9488;
+        --assistant: #f8fafc;
+        --user: #e6fffb;
+        --shadow: 0 14px 40px rgba(15, 23, 42, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 5% 0%, #eef2ff 0, transparent 36%),
+          radial-gradient(circle at 95% 10%, #ecfeff 0, transparent 28%),
+          var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      .container {
+        width: min(1180px, calc(100vw - 24px));
+        margin: 0 auto;
+        padding: 22px 0 26px;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+      }
+
+      .header {
+        padding: 16px 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .header h1 {
+        margin: 0;
+        font-size: clamp(24px, 2.5vw, 34px);
+        letter-spacing: -0.03em;
+      }
+
+      .header p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status-pill {
+        padding: 8px 11px;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #334155;
+        font-size: 12px;
+        border: 1px solid var(--line);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .chat-panel {
+        padding: 14px;
+      }
+
+      .messages {
+        height: 56vh;
+        min-height: 420px;
+        overflow: auto;
+        display: grid;
+        gap: 10px;
+        padding: 4px;
+      }
+
+      .msg {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 10px 12px;
+        line-height: 1.58;
+        animation: fadeUp 220ms ease both;
+        white-space: pre-wrap;
+      }
+
+      .msg.user {
+        margin-left: 12%;
+        background: var(--user);
+      }
+
+      .msg.assistant {
+        margin-right: 8%;
+        background: var(--assistant);
+      }
+
+      .composer {
+        margin-top: 12px;
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #ffffff;
+        color: var(--text);
+        font: inherit;
+        outline: none;
+        transition: box-shadow 180ms ease, border-color 180ms ease;
+      }
+
+      textarea:focus {
+        border-color: #99f6e4;
+        box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.18);
+      }
+
+      .actions {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 10px 13px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      }
+
+      #send {
+        background: linear-gradient(135deg, var(--primary), var(--primary-2));
+        color: #ffffff;
+      }
+
+      #send:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 16px rgba(13, 148, 136, 0.24);
+      }
+
+      #clear,
+      #new,
+      #example {
+        background: #f8fafc;
+        color: #0f172a;
+        border-color: var(--line);
+      }
+
+      .side {
+        padding: 14px;
+      }
+
+      .side h3 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        color: #334155;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      #sources {
+        display: grid;
+        gap: 8px;
+        max-height: 72vh;
+        overflow: auto;
+      }
+
+      .source {
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #ffffff;
+        color: #334155;
+        font-size: 13px;
+        animation: fadeUp 220ms ease both;
+      }
+
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 980px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .messages {
+          height: 50vh;
+          min-height: 320px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="card header">
+        <div>
+          <h1>Berkshire RAG Playground</h1>
+          <p>Professional white theme interface with streaming answers and source snippets.</p>
+        </div>
+        <div>
+          <div class="status-pill">Status: <span id="status">idle</span></div>
+          <div class="actions" style="justify-content:flex-end; margin-top:8px">
+            <button id="example" type="button">Load Example</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="shell" style="margin-top:16px;">
+        <section class="card chat-panel">
+          <div class="messages" id="messages"></div>
+          <div class="composer">
+            <textarea id="message" placeholder="Ask about Buffett's capital allocation..."></textarea>
+            <div class="actions">
+              <button id="send" type="button">Send</button>
+              <button id="clear" type="button">Clear</button>
+              <button id="new" type="button">New Session</button>
+            </div>
+          </div>
+        </section>
+        <aside class="card side">
+          <h3>Sources</h3>
+          <div id="sources"></div>
+        </aside>
+      </main>
+
+    </div>
+
+    <script>
+      const sendBtn = document.getElementById('send');
+      const clearBtn = document.getElementById('clear');
+      const exampleBtn = document.getElementById('example');
+      const newBtn = document.getElementById('new');
+      const msgInput = document.getElementById('message');
+      const messages = document.getElementById('messages');
+      const status = document.getElementById('status');
+      const sourcesBox = document.getElementById('sources');
+
+      function addMessage(role, text){
+        const d = document.createElement('div');
+        d.className = 'msg ' + (role==='user' ? 'user' : 'assistant');
+        d.textContent = text;
+        messages.appendChild(d);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      function renderSources(list){
+        sourcesBox.innerHTML = '';
+        (list || []).forEach(s=>{
+          const el = document.createElement('div');
+          el.className = 'source';
+          el.textContent = `${s.title || s.filename || 'source'}${s.year ? ' - '+s.year : ''}`;
+          sourcesBox.appendChild(el);
+        });
+      }
+
+      async function streamAnswer(text){
+        addMessage('user', text);
+        status.textContent = 'streaming';
+        const res = await fetch('/api/chat/stream', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ message: text, sessionId: localStorage.getItem('sessionId') || '' })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(()=>({error:'Request failed'}));
+          addMessage('assistant', 'Error: ' + (err.error || 'Request failed'));
+          status.textContent = 'error';
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let answer = '';
+        while(true){
+          const {done, value} = await reader.read();
+          if(done) break;
+          buffer += decoder.decode(value, {stream:true});
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
+          for(const part of parts){
+            const lines = part.split('\n').filter(Boolean);
+            const event = lines.find(l=>l.startsWith('event: '))?.slice(7) || 'message';
+            const dataLine = lines.find(l=>l.startsWith('data: '))?.slice(6) || '{}';
+            let payload = {};
+            try{ payload = JSON.parse(dataLine); } catch(e){}
+            if(event==='delta' && payload.text){
+              answer += payload.text;
+              // render or update last assistant bubble
+              let last = messages.lastElementChild;
+              if(!last || !last.classList.contains('assistant')){ last = document.createElement('div'); last.className='msg assistant'; messages.appendChild(last); }
+              last.textContent = answer;
+            }
+            if(event==='done'){
+              const final = payload.answer || answer;
+              let last = messages.lastElementChild;
+              if(!last || !last.classList.contains('assistant')){ last = document.createElement('div'); last.className='msg assistant'; messages.appendChild(last); }
+              last.textContent = final;
+              status.textContent = 'idle';
+              renderSources(payload.sources || []);
+            }
+          }
+        }
+        status.textContent = 'idle';
+      }
+
+      sendBtn.addEventListener('click', ()=>{
+        const text = (msgInput.value||'').trim(); if(!text) return; streamAnswer(text); msgInput.value='';
+      });
+      msgInput.addEventListener('keydown', (event)=>{
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          sendBtn.click();
+        }
+      });
+      clearBtn.addEventListener('click', ()=>{ messages.innerHTML=''; renderSources([]); });
+      exampleBtn.addEventListener('click', ()=>{ msgInput.value='What did Buffett emphasize about capital allocation?'; msgInput.focus(); });
+      newBtn.addEventListener('click', ()=>{ localStorage.removeItem('sessionId'); messages.innerHTML=''; renderSources([]); });
+    </script>
+  </body>
+</html>
