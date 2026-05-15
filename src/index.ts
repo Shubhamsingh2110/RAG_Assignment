@@ -3,10 +3,10 @@
 
 import dotenv from "dotenv";
 import { createServer } from "http";
-import OpenAI from "openai";
-import { berkshireAgent } from "./agents/berkshire.js";
+import { berkshireAgent, buildBerkshirePrompt } from "./agents/berkshire.js";
 import { tools, vectorSearchTool } from "./tools/retrieval.js";
 import { validateConfig, config } from "./lib/config.js";
+import { clearChatMessages, getChatMessages, storeChatMessage } from "./lib/db.js";
 
 dotenv.config();
 
@@ -24,7 +24,7 @@ async function main() {
   const agent = await berkshireAgent;
   console.log(`✅ Agent initialized: ${agent.name}`);
   console.log(`📖 Model: ${agent.model}`);
-  console.log(`📊 Max tokens: ${agent.maxTokens}\n`);
+  console.log(`📊 Max retries: ${agent.maxRetries ?? 0}\n`);
 
   console.log("Available tools:");
   Object.entries(tools).forEach(([key, tool]) => {
@@ -39,9 +39,27 @@ async function main() {
   console.log(`  Mastra playground: http://localhost:${config.mastraPlaygroundPort}`);
   console.log(`  Environment: ${config.nodeEnv}\n`);
 
-  const openai = new OpenAI({ apiKey: config.openaiApiKey });
+  type ClientMessage = {
+    role: "user" | "assistant";
+    content: string;
+  };
 
-  async function answerQuestion(message: string) {
+  function normalizeSessionId(input: unknown) {
+    const value = typeof input === "string" ? input.trim() : "";
+    return value || `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function summarizeConversation(messages: ClientMessage[]) {
+    if (messages.length === 0) {
+      return "No prior conversation context.";
+    }
+
+    return messages
+      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .join("\n");
+  }
+
+  async function answerQuestion(message: string, sessionId: string, priorMessages: ClientMessage[] = []) {
     const query = message.trim();
     const sources = await vectorSearchTool(query, 4);
     const context =
@@ -51,22 +69,21 @@ async function main() {
             .join("\n\n")
         : "No matching shareholder letter context was found.";
 
-    const completion = await openai.chat.completions.create({
-      model: agent.model,
-      temperature: 0.2,
-      max_tokens: agent.maxTokens,
-      messages: [
-        { role: "system", content: agent.prompt },
-        {
-          role: "system",
-          content:
-            `Use the following retrieved Berkshire Hathaway shareholder letter excerpts as grounding context. Cite the relevant excerpt numbers in your answer when possible.\n\n${context}`,
-        },
-        { role: "user", content: query },
-      ],
+    const conversationContext = summarizeConversation(priorMessages.slice(-12));
+    const systemPrompt = buildBerkshirePrompt({
+      retrievedContext: context,
+      conversationContext,
     });
 
-    const answer = completion.choices[0]?.message?.content?.trim() || "No answer generated.";
+    await storeChatMessage({ session_id: sessionId, role: "user", content: query });
+
+    const completion = await agent.generate([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: query },
+    ]);
+
+    const answer = completion.text?.trim() || "No answer generated.";
+    await storeChatMessage({ session_id: sessionId, role: "assistant", content: answer });
     return { answer, sources };
   }
 
@@ -305,6 +322,13 @@ async function main() {
       const exampleBtn = document.getElementById('exampleBtn');
       const clearBtn = document.getElementById('clearBtn');
 
+      const sessionStorageKey = 'berkshire_session_id';
+      let sessionId = localStorage.getItem(sessionStorageKey);
+      if (!sessionId) {
+        sessionId = 'session_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem(sessionStorageKey, sessionId);
+      }
+
       const history = [];
 
       function addMessage(role, text) {
@@ -336,7 +360,7 @@ async function main() {
           const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, history })
+            body: JSON.stringify({ message: text, history, sessionId })
           });
 
           const data = await response.json();
@@ -363,6 +387,11 @@ async function main() {
       clearBtn.addEventListener('click', () => {
         chatLog.innerHTML = '';
         history.length = 0;
+        fetch('/api/session/clear', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        }).catch(() => {});
         addMessage('assistant', 'Ask a question to start the Berkshire Hathaway playground.');
       });
       exampleBtn.addEventListener('click', () => {
@@ -399,6 +428,7 @@ async function main() {
         try {
           const payload = JSON.parse(body || "{}");
           const message = String(payload.message || "").trim();
+          const sessionId = normalizeSessionId(payload.sessionId);
 
           if (!message) {
             res.writeHead(400, { "Content-Type": "application/json" });
@@ -406,7 +436,8 @@ async function main() {
             return;
           }
 
-          const result = await answerQuestion(message);
+          const priorMessages = await getChatMessages(sessionId, 20);
+          const result = await answerQuestion(message, sessionId, priorMessages.map((entry) => ({ role: entry.role as "user" | "assistant", content: entry.content })));
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(result));
         } catch (error) {
@@ -416,6 +447,32 @@ async function main() {
               error: error instanceof Error ? error.message : "Unknown error",
             })
           );
+        }
+      });
+
+      return;
+    }
+
+    if (req.method === "POST" && url === "/api/session/clear") {
+      let body = "";
+
+      req.on("data", (chunk) => {
+        body += chunk;
+        if (body.length > 1_000_000) {
+          req.destroy();
+        }
+      });
+
+      req.on("end", async () => {
+        try {
+          const payload = JSON.parse(body || "{}");
+          const sessionId = normalizeSessionId(payload.sessionId);
+          await clearChatMessages(sessionId);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (error) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
         }
       });
 

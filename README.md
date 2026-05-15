@@ -6,7 +6,6 @@ A production-ready RAG (Retrieval-Augmented Generation) application built with M
 
 ```bash
 npm install
-npm run mastra:init
 # Set up .env file (see IMPLEMENTATION.md)
 npm run dev
 ```
@@ -25,7 +24,7 @@ provue/data/source/
 └── 2024-shareholder-letter.pdf
 ```
 
-**[Download from Google Drive link in assignment](assignment-pdf)**
+Download the Berkshire Hathaway shareholder letters from the assignment's Google Drive link and place the PDFs in `data/source/`.
 
 ## 📚 Documentation
 

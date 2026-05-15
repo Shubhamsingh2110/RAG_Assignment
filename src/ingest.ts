@@ -5,26 +5,14 @@ import path from "path";
 // @ts-ignore
 import pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
 import OpenAI from "openai";
+import { MDocument } from "@mastra/rag";
 import { config } from "./lib/config.js";
-import { initDb, storeChunk } from "./lib/db.js";
+import { getChunkCount, initDb, searchSimilar, storeChunk } from "./lib/db.js";
 
 const SOURCE_DIR = path.resolve(process.cwd(), "data", "source");
-const CHUNK_SIZE = 1000; // characters
-const CHUNK_OVERLAP = 200;
+const CHUNK_SIZE = 640;
+const CHUNK_OVERLAP = 100;
 const EMBEDDING_MODEL = "text-embedding-3-small";
-
-function chunkText(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    const end = Math.min(start + size, text.length);
-    const piece = text.slice(start, end).trim();
-    if (piece) chunks.push(piece);
-    if (end === text.length) break;
-    start = end - overlap; // overlap
-  }
-  return chunks;
-}
 
 async function extractTextFromPdf(filePath: string) {
   const data = await fs.readFile(filePath);
@@ -38,6 +26,17 @@ async function extractTextFromPdf(filePath: string) {
     fullText += `\n\n${pageText}`;
   }
   return fullText;
+}
+
+function buildFinancialDocument(text: string, filePath: string) {
+  const fileName = path.basename(filePath);
+  const sourceYear = inferYearFromFilename(fileName);
+
+  return MDocument.fromText(text, {
+    source_file: fileName,
+    source_year: sourceYear,
+    document_type: "pdf",
+  });
 }
 
 async function embedTexts(client: OpenAI, texts: string[]) {
@@ -67,22 +66,30 @@ async function run() {
     console.log(`Processing: ${path.basename(filePath)}`);
     try {
       const text = await extractTextFromPdf(filePath);
-      const chunks = chunkText(text);
-      console.log(`  -> extracted ${chunks.length} chunks`);
+      const document = buildFinancialDocument(text, filePath);
+      const chunks = await document.chunk({
+        strategy: "recursive",
+        maxSize: CHUNK_SIZE,
+        overlap: CHUNK_OVERLAP,
+        separators: ["\n\n", "\n", " "],
+      });
+      console.log(`  -> extracted ${chunks.length} chunks using recursive chunking`);
 
       // Batch embeddings in groups of 32
       const batchSize = 32;
       for (let i = 0; i < chunks.length; i += batchSize) {
         const slice = chunks.slice(i, i + batchSize);
-        const embeddings = await embedTexts(openai, slice);
+        const sliceTexts = slice.map((chunk) => chunk.text);
+        const embeddings = await embedTexts(openai, sliceTexts);
         for (let j = 0; j < slice.length; j++) {
-          const chunkTextStr = slice[j];
+          const chunkNode = slice[j];
           const embedding = embeddings[j];
+          const chunkMetadata = chunkNode.metadata ?? {};
           const record = {
-            text: chunkTextStr,
+            text: chunkNode.text,
             embedding,
-            source_year: inferYearFromFilename(path.basename(filePath)),
-            source_file: path.basename(filePath),
+            source_year: chunkMetadata.source_year ?? inferYearFromFilename(path.basename(filePath)),
+            source_file: chunkMetadata.source_file ?? path.basename(filePath),
             chunk_index: i + j,
           };
           // storeChunk returns the inserted id; ignore here
@@ -90,11 +97,25 @@ async function run() {
         }
         console.log(`  -> stored chunks ${i}..${Math.min(i + batchSize, chunks.length) - 1}`);
       }
+
+      if (chunks.length > 0) {
+        const firstChunk = chunks[0];
+        const firstEmbedding = await embedTexts(openai, [firstChunk.text]);
+        const nearest = await searchSimilar(firstEmbedding[0], 1);
+        const topMatch = nearest[0];
+        if (topMatch) {
+          console.log(
+            `  -> smoke test passed: nearest chunk ${topMatch.id} from ${topMatch.source_file ?? "unknown"}`
+          );
+        }
+      }
     } catch (err) {
       console.error(`Failed to process ${filePath}:`, err);
     }
   }
 
+  const totalChunks = await getChunkCount();
+  console.log(`Vector database now contains ${totalChunks} stored chunks.`);
   console.log("Ingestion complete.");
 }
 

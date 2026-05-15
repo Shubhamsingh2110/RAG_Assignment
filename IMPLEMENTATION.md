@@ -20,7 +20,7 @@ provue/
         └── 2024-shareholder-letter.pdf
 ```
 
-Download these PDFs from the Google Drive link in your assignment. Place them in the `data/source/` folder with the naming convention above (year first).
+Download these PDFs from the Google Drive link in your assignment, then place them in the `data/source/` folder with the naming convention above (year first).
 
 ---
 

@@ -7,20 +7,14 @@
 npm install
 ```
 
-3. Initialize Mastra scaffold (this will interactively create files):
-
-```bash
-npm run mastra:init
-```
-
-4. Copy environment variables and fill values:
+3. Copy environment variables and fill values:
 
 ```bash
 copy .env.example .env
 # edit .env and set OPENAI_API_KEY and DATABASE_URL
 ```
 
-5. Start development server (after Mastra scaffold is created):
+4. Start development server:
 
 ```bash
 npm run dev
@@ -29,3 +23,4 @@ npm run dev
 Notes:
 - The next step is to place Berkshire Hathaway PDF letters in `data/source/`.
 - Configure PostgreSQL with `pgvector` extension enabled for vector storage.
+- Open `http://localhost:4111` after the server starts.
