@@ -39,9 +39,29 @@ export async function vectorSearchTool(
 // Tool: Retrieve document by year
 export async function retrieveLetterByYear(
   year: number
+  , filters?: { source?: string | RegExp; minYear?: number; maxYear?: number }
 ): Promise<{ text: string; year: number }> {
   const rows = await getChunksByYear(year, 50);
-  const text = rows.map((row) => row.text).join("\n\n");
+  // Apply basic metadata filters if provided
+  let filtered = rows;
+  if (filters) {
+    if (filters.source) {
+      const src = filters.source;
+      filtered = filtered.filter((r) => {
+        if (!r.source_file) return false;
+        if (src instanceof RegExp) return src.test(r.source_file);
+        return r.source_file.includes(String(src));
+      });
+    }
+    if (filters.minYear) {
+      filtered = filtered.filter((r) => (r.source_year ?? 0) >= (filters.minYear ?? 0));
+    }
+    if (filters.maxYear) {
+      filtered = filtered.filter((r) => (r.source_year ?? 0) <= (filters.maxYear ?? Infinity));
+    }
+  }
+
+  const text = filtered.map((row) => row.text).join("\n\n");
 
   if (text) {
     return { text, year };
@@ -87,3 +107,32 @@ export const tools = {
     fn: listAvailableDocuments,
   },
 };
+
+// Mastra-compatible exports: keep the same `tools` object but also export helper functions
+export async function vectorSearchWithFilters(query: string, topK = 5, metadataFilters?: { source?: string | RegExp; year?: number | { min?: number; max?: number } }) {
+  const results = await vectorSearchTool(query, topK);
+  if (!metadataFilters) return results;
+
+  return results.filter((r) => {
+    if (metadataFilters.source) {
+      const src = metadataFilters.source;
+      if (src instanceof RegExp) {
+        if (!src.test(r.source)) return false;
+      } else if (!r.source.includes(String(src))) return false;
+    }
+
+    if (metadataFilters.year) {
+      if (typeof metadataFilters.year === "number") {
+        if (r.year !== metadataFilters.year) return false;
+      } else {
+        const min = metadataFilters.year.min ?? -Infinity;
+        const max = metadataFilters.year.max ?? Infinity;
+        if (r.year < min || r.year > max) return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+// helper exported by name via its declaration; no additional re-export needed

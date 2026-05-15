@@ -1,4 +1,5 @@
 import { Agent } from "@mastra/core/agent";
+import { tools as mastraTools } from "../tools/retrieval.js";
 
 export type BerkshirePromptInput = {
   retrievedContext: string;
@@ -44,6 +45,7 @@ export const berkshireAgent = new Agent({
   model: "openai/gpt-4o",
   instructions: buildBerkshirePrompt({ retrievedContext: "", conversationContext: "" }),
   maxRetries: 2,
+  tools: mastraTools as any,
 });
 
 export async function createBerkshireAgent() {
